@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>イベント抽選アプリ_Ver1.04</title>
+
+<style>
+:root{
+  --gold:#c5a059;
+  --gold-grad:linear-gradient(135deg,#f9f295,#e0aa3e,#996515);
+  --red:#b11226;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body{
+  margin:0;
+  font-family:"Hiragino Sans","Yu Gothic",sans-serif;
+  background:#f5f5f5;
+  height: 100dvh;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  overflow: hidden;
+}
+
+.touch-controls {
+  position: fixed;
+  top: env(safe-area-inset-top, 20px);
+  right: env(safe-area-inset-right, 20px);
+  display: flex;
+  gap: 10px;
+  z-index: 100;
+}
+.control-btn {
+  background: rgba(0, 0, 0, 0.05);
+  border: 1px solid var(--gold);
+  color: var(--gold);
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: bold;
+  cursor: pointer;
+  backdrop-filter: blur(5px);
+  transition: 0.3s;
+}
+.is-fullscreen .control-btn { opacity: 0.4; }
+.is-fullscreen .control-btn:hover { opacity: 1; }
+
+.screen{
+  display:none;
+  width:96%;
+  height:94dvh;
+  background:#fff;
+  border-radius:30px;
+  padding:20px;
+  box-sizing:border-box;
+  flex-direction:column;
+  align-items:center;
+  justify-content:space-between;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+}
+.screen.active{display:flex}
+
+h1{margin:5px 0;color:var(--red); font-size: 1.5rem;}
+.desc{font-size:1rem;color:#888;margin-top:10px;}
+
+input {
+  -webkit-user-select: auto;
+  user-select: auto;
+  font-size:1.2rem;
+  padding:10px;
+  border-radius:10px;
+  border:2px solid var(--gold);
+}
+
+.btn{
+  background:var(--gold-grad);
+  color:#fff;
+  border:none;
+  padding:15px 45px;
+  font-size:1.4rem;
+  border-radius:50px;
+  font-weight:900;
+  cursor:pointer;
+  box-shadow: 0 4px 15px rgba(197, 160, 89, 0.4);
+}
+.btn:active { transform: translateY(2px); box-shadow: none; }
+.btn.gray{background:#aaa; box-shadow: none;}
+
+#eventTitleView{
+  font-size:2rem;
+  font-weight:900;
+  color:var(--red);
+}
+
+#prize-display{width:85%;text-align:center; min-height: 4.5rem; display: flex; flex-direction: column; justify-content: center;}
+.prize-small{font-size:1.4rem;color:#666;margin-bottom:4px; height: 1.6rem;}
+.prize-main{font-size:2.8rem;font-weight:900;border-bottom:3px solid var(--gold); display: inline-block; margin: 0 auto;}
+
+#main-number{
+  font-size:min(70vw, 50vh);
+  font-weight:900;
+  color:var(--red);
+  line-height:.9;
+  text-shadow:8px 8px 0 #fff, 16px 16px 30px rgba(0,0,0,.15);
+  cursor: default;
+}
+
+#status-msg{font-size:1.8rem;color:var(--gold)}
+
+.list-box{
+  width:90%;
+  height:350px;
+  overflow:auto;
+  border:1px solid #eee;
+  border-radius:15px;
+  -webkit-user-select: auto;
+  user-select: auto;
+}
+
+.prize-item{
+  padding:12px 20px;
+  border-bottom:1px solid #eee;
+  display:flex;
+  justify-content:space-between;
+  font-size:1.3rem;
+}
+
+#confetti{position:fixed;inset:0;pointer-events:none;z-index:99; display: none;}
+body.is-fullscreen .screen { width: 100%; height: 100dvh; border-radius: 0; }
+</style>
+</head>
+
+<body>
+<canvas id="confetti"></canvas>
+
+<div class="touch-controls">
+    <div class="control-btn" onclick="toScreen(1)">SETTING</div>
+    <div class="control-btn" id="full-btn" onclick="toggleFullscreen()">FULL</div>
+</div>
+
+<div id="screen-1" class="screen active">
+  <h1>抽選設定</h1>
+  <div class="desc">抽選会の名前</div>
+  <input id="eventTitleInput" value="プレミアム大抽選会" style="width:70%">
+  <div class="desc">抽選（座席）番号範囲</div>
+  <div>
+    <input id="minInput" type="number" value="1" style="width:80px"> 〜
+    <input id="maxInput" type="number" value="100" style="width:80px">
+  </div>
+  <button class="btn" onclick="toScreen(2)">賞品登録へ</button>
+</div>
+
+<div id="screen-2" class="screen">
+  <h1>賞品登録</h1>
+  <div class="desc">例：特等 / 温泉旅行（/なしなら1行表示）</div>
+  <div style="display:flex;gap:10px;width:80%">
+    <input id="spName" placeholder="説明文 / 賞品名" style="flex:1">
+    <button class="btn" onclick="addPrize()">追加</button>
+  </div>
+  <div class="list-box" id="list"></div>
+  <div style="display:flex;gap:10px">
+    <button class="btn gray" onclick="$('fileInput').click()">ファイル読込</button>
+    <input type="file" id="fileInput" accept=".txt" style="display:none" onchange="importFile(this)">
+    <button class="btn" onclick="toScreen(3)">抽選会場へ</button>
+  </div>
+</div>
+
+<div id="screen-3" class="screen">
+  <div id="eventTitleView"></div>
+  <div id="prize-display"></div>
+  <div id="main-number">--</div>
+  <div id="status-msg">READY</div>
+  <div>
+    <button class="btn" id="rollBtn" onclick="doRoll()">抽選スタート</button>
+    <button class="btn gray" id="retryBtn" onclick="retry()" style="display:none">もう一回</button>
+    <button class="btn" id="nextBtn" onclick="nextPrize()" style="display:none">次の抽選へ</button>
+    <button class="btn" id="resBtn" onclick="toScreen(4)" style="display:none">結果一覧</button>
+  </div>
+</div>
+
+<div id="screen-4" class="screen">
+  <h1>結果一覧</h1>
+  <div class="list-box" id="resultList"></div>
+  <button class="btn" onclick="location.reload()">最初に戻る</button>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+let prizes=[],numbers=[],results=[];
+let idx=0,rolling=false;
+let isFullscreenMode = false;
+
+// --- 音演出 ---
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function playSound(freq, type, duration, vol=0.1) {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + duration);
+}
+
+// --- 紙吹雪 ---
+const canvas = $('confetti');
+const ctx = canvas.getContext('2d');
+let particles = [];
+function initConfetti() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    canvas.style.display = 'block';
+    particles = [];
+    for(let i=0; i<150; i++) {
+        particles.push({
+            x: Math.random() * canvas.width,
+            y: Math.random() * canvas.height - canvas.height,
+            size: Math.random() * 10 + 5,
+            color: ['#f9f295', '#e0aa3e', '#b11226', '#fff'][Math.floor(Math.random()*4)],
+            vx: Math.random() * 4 - 2,
+            vy: Math.random() * 5 + 5,
+            r: Math.random() * 360
+        });
+    }
+    requestAnimationFrame(updateConfetti);
+}
+function updateConfetti() {
+    ctx.clearRect(0,0,canvas.width, canvas.height);
+    let alive = false;
+    particles.forEach(p => {
+        p.y += p.vy; p.x += p.vx; p.r += 5;
+        if(p.y < canvas.height) {
+            alive = true;
+            ctx.fillStyle = p.color; ctx.save();
+            ctx.translate(p.x, p.y); ctx.rotate(p.r * Math.PI / 180);
+            ctx.fillRect(-p.size/2, -p.size/2, p.size, p.size); ctx.restore();
+        }
+    });
+    if(alive) requestAnimationFrame(updateConfetti); else canvas.style.display = 'none';
+}
+
+// --- メインロジック ---
+function toScreen(n){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  $('screen-'+n).classList.add('active');
+  if(n===3){ $('eventTitleView').textContent=$('eventTitleInput').value; setupDraw(); }
+  if(n===4){
+    $('resultList').innerHTML = results.map(r=>{
+        const p=parsePrizeText(r.p);
+        const disp = p.small ? `${p.small}：${p.main}` : p.main;
+        return `<div class="prize-item"><span>${disp}</span><b>${r.n}</b></div>`;
+      }).join('');
+  }
+}
+
+function toggleFullscreen() {
+    isFullscreenMode = !isFullscreenMode;
+    const btn = $('full-btn');
+    if (isFullscreenMode) {
+        document.body.classList.add('is-fullscreen'); btn.textContent = "NORMAL";
+        if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(()=>{});
+    } else {
+        document.body.classList.remove('is-fullscreen'); btn.textContent = "FULL";
+        if (document.exitFullscreen && document.fullscreenElement) document.exitFullscreen().catch(()=>{});
+    }
+}
+
+// 賞品テキストの解析ロジックを修正
+function parsePrizeText(text) {
+    const parts = text.split(/[\/|｜]/);
+    if (parts.length > 1) {
+        return { small: parts[0].trim(), main: parts[1].trim() };
+    } else {
+        return { small: "", main: parts[0].trim() };
+    }
+}
+
+function addPrize(){
+  if($('spName').value){ prizes.push($('spName').value); $('spName').value=''; renderList(); }
+}
+
+function renderList(){
+  $('list').innerHTML=prizes.map((p,i)=>`<div class="prize-item">${i+1}. ${p}</div>`).join('');
+}
+
+function importFile(inp){
+  const r=new FileReader();
+  r.onload=e=>{
+    e.target.result.split(/\r?\n/).forEach(l=>{if(l.trim())prizes.push(l)});
+    renderList();
+  };
+  r.readAsText(inp.files[0]);
+}
+
+function setupDraw(){
+  if(numbers.length===0){
+    for(let i=+$('minInput').value;i<=+$('maxInput').value;i++)numbers.push(i);
+  }
+  if(idx>=prizes.length){ $('resBtn').style.display='inline-block'; return; }
+  showPrize(prizes[idx]);
+  $('main-number').textContent='??';
+  $('status-msg').textContent='READY';
+  $('rollBtn').style.display='inline-block';
+  $('retryBtn').style.display='none';
+  $('nextBtn').style.display='none';
+  $('resBtn').style.display='none';
+}
+
+function showPrize(text){
+  const p = parsePrizeText(text);
+  // smallが空の場合は表示領域自体を詰め、mainを際立たせる
+  $('prize-display').innerHTML=
+    `<div class="prize-small" style="${p.small ? '' : 'display:none'}">${p.small}</div>
+     <div class="prize-main">${p.main}</div>`;
+}
+
+function doRoll(){
+  if(rolling)return;
+  if(audioCtx.state === 'suspended') audioCtx.resume();
+  rolling=true;
+  $('rollBtn').style.display='none'; $('retryBtn').style.display='none'; $('nextBtn').style.display='none';
+  $('status-msg').textContent='ROLLING...';
+  
+  let c=0;
+  const t=setInterval(()=>{
+    $('main-number').textContent=numbers[Math.random()*numbers.length|0];
+    playSound(150, 'square', 0.1, 0.05);
+    if(++c>50){
+      clearInterval(t);
+      const i=Math.random()*numbers.length|0;
+      const win=numbers.splice(i,1)[0];
+      $('main-number').textContent=win;
+      results[idx]={p:prizes[idx],n:win};
+      $('status-msg').textContent='WINNER!!';
+      setTimeout(()=>{
+        playSound(523.25, 'triangle', 0.5, 0.1); playSound(659.25, 'triangle', 0.5, 0.1); playSound(783.99, 'triangle', 1.0, 0.1);
+        initConfetti();
+      }, 100);
+      $('retryBtn').style.display='inline-block';
+      if(idx+1<prizes.length)$('nextBtn').style.display='inline-block';
+      else $('resBtn').style.display='inline-block';
+      rolling=false;
+    }
+  },70);
+}
+
+function retry(){ 
+    if(results[idx]) { numbers.push(results[idx].n); numbers.sort((a,b)=>a-b); }
+    doRoll(); 
+}
+function nextPrize(){ idx++; setupDraw(); }
+</script>
+</body>
+</html>
